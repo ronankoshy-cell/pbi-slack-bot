@@ -21,8 +21,10 @@ jobs:
 
       - name: Run Snapshot
         env:
-          # MATCHING TO YOUR SCREENSHOT:
           POWERBI_URL: ${{ secrets.POWERBI_URL }}
           SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          # NEW SECRETS:
+          PBI_USERNAME: ${{ secrets.PBI_USERNAME }}
+          PBI_PASSWORD: ${{ secrets.PBI_PASSWORD }}
         run: python snapshot.py
