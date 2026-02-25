@@ -7,7 +7,6 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from slack_sdk import WebClient
 
-# 1. Pull Environment Variables
 pbi_url = os.environ.get('POWERBI_URL')
 slack_token = os.environ.get('SLACK_TOKEN')
 channel_id = os.environ.get('SLACK_CHANNEL_ID')
