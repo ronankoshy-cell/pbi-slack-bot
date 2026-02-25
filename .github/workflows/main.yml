@@ -1,33 +1,27 @@
 name: Power BI Snapshot Bot
-
 on:
   schedule:
-    # This runs at 9:00 AM UTC (approx. 4 AM EST) Monday through Friday
     - cron: '0 7 * * 1-5'
-  workflow_dispatch: # This is the button that lets you test it manually
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python environment
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install required libraries
-        run: |
-          python -m pip install --upgrade pip
-          pip install selenium slack_sdk webdriver-manager
+      - name: Install Dependencies
+        run: pip install selenium slack_sdk webdriver-manager
 
-      - name: Run Snapshot Script
-        # THIS IS THE CRITICAL SECTION. 
-        # It maps your GitHub Secrets to the names your Python script expects.
+      - name: Run Snapshot
         env:
+          # MATCHING TO YOUR SCREENSHOT:
           POWERBI_URL: ${{ secrets.POWERBI_URL }}
           SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
