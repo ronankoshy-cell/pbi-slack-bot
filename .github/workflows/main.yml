@@ -1,22 +1,27 @@
-name: Power BI Slack Relay
+name: Daily Power BI Multi-Relay
 on:
   schedule:
-    - cron: '0 7 * * *'
+    - cron: '0 7 * * *' # Every day at 7 AM UTC
   workflow_dispatch:
 
 jobs:
   relay:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install
+
+      - name: Install Slack SDK
         run: pip install slack_sdk requests
-      - name: Run
+
+      - name: Execute Relay
         env:
           SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
-          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
-          RELAY_CHANNEL_ID: ${{ secrets.RELAY_CHANNEL_ID }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }} # Target Channel ID
+          RELAY_CHANNEL_ID: ${{ secrets.RELAY_CHANNEL_ID }} # Private Relay ID
         run: python snapshot.py
