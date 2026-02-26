@@ -1,9 +1,9 @@
 name: Power BI Slack Relay
 on:
   schedule:
-    # Runs at 07:00 UTC every day
+    # Runs at 07:00 UTC (7 AM) every day
     - cron: '0 7 * * *'
-  workflow_dispatch: # Allows you to click "Run workflow" manually for testing
+  workflow_dispatch: # This allows you to click "Run workflow" manually to test
 
 jobs:
   relay-report:
