@@ -1,10 +1,10 @@
 import os
 import sys
 import requests
-import re
+import time
 from slack_sdk import WebClient
 
-# 1. Config from GitHub Secrets
+# Configuration from GitHub Secrets
 token = os.environ.get('SLACK_TOKEN')
 relay_id = os.environ.get('RELAY_CHANNEL_ID')
 target_id = os.environ.get('SLACK_CHANNEL_ID')
@@ -12,58 +12,84 @@ client = WebClient(token=token)
 
 def run_relay():
     try:
-        print("--- Universal Scraper Started ---")
+        print("--- Today's Targeted Multi-Report Relay ---")
         
-        # 2. Get message history (uses your groups:history scope)
-        print(f"Scanning {relay_id} for the Power BI email content...")
-        res = client.conversations_history(channel=relay_id, limit=5)
+        # 1. Define 'Today' (Messages from the last 24 hours only)
+        day_in_seconds = 24 * 60 * 60
+        cutoff_time = time.time() - day_in_seconds
+
+        # 2. Fetch history from the private relay channel
+        res = client.conversations_history(channel=relay_id, limit=20)
         messages = res.get("messages", [])
         
-        target_image_url = None
+        # Define our mapping for keywords, specific messages, and found URLs
+        reports = {
+            "Overall": {
+                "keyword": "overall",
+                "message": "Hi Team, Sharing the Overall Ramadan Funnel View Snapshot",
+                "url": None
+            },
+            "iOS": {
+                "keyword": "ios",
+                "message": "Hi Team, Sharing the iOS Ramadan Funnel View Snapshot",
+                "url": None
+            },
+            "Android": {
+                "keyword": "android",
+                "message": "Hi Team, Sharing the Android Ramadan Funnel View Snapshot",
+                "url": None
+            }
+        }
 
+        # 3. Scan messages for today's snapshots
         for msg in messages:
-            # Look for standard files first
-            if "files" in msg:
-                for f in msg["files"]:
-                    if "png" in f.get('filetype', '').lower():
-                        target_image_url = f.get("url_private_download")
-                        print(f"Found standard file: {f.get('name')}")
-                        break
-            
-            # If no standard file, scan the HTML/Text for the Slack-hosted image link
-            if not target_image_url:
-                text_to_scan = str(msg)
-                # This regex finds the Slack-origin URL found in your HTML snippet
-                match = re.search(r'https://[^\s"\'<>]*files-origin\.slack\.com/[^\s"\'<>]+', text_to_scan)
-                if match:
-                    target_image_url = match.group(0).replace('\\', '')
-                    print(f"Found hosted image link in HTML: {target_image_url}")
-                    break
+            msg_ts = float(msg.get("ts", 0))
+            if msg_ts < cutoff_time:
+                continue # Ignore old reports from previous days
 
-        if not target_image_url:
-            print("ERROR: Could not find any PNG or hosted image link in the messages.")
-            return
+            # Email integrations often wrap PNGs in 'files' or 'attachments'
+            items = msg.get("files", []) + msg.get("attachments", [])
+            for item in items:
+                search_text = str(item).lower()
+                # Get the secure download URL
+                url = item.get("url_private_download") or item.get("image_url")
+                
+                if not url: continue
 
-        # 3. Download using Bot Token
-        print("Downloading image...")
+                # Match found URL to the correct category based on keywords
+                for key in reports:
+                    if reports[key]["keyword"] in search_text and not reports[key]["url"]:
+                        reports[key]["url"] = url
+                        print(f"Matched Today's {key} Report.")
+
+        # 4. Download and Relay with specific messages
         headers = {'Authorization': f'Bearer {token}'}
-        img_res = requests.get(target_image_url, headers=headers)
-        
-        if img_res.status_code == 200:
-            with open("report.png", "wb") as f:
-                f.write(img_res.content)
-            
-            # 4. Final Upload to the team channel
-            print(f"Relaying report to {target_id}...")
-            client.files_upload_v2(
-                channel=target_id, 
-                file="report.png", 
-                title="Power BI Report Snapshot",
-                initial_comment="📊 *Daily Power BI Update* relayed from subscription."
-            )
-            print("SUCCESS: Relay complete!")
+        found_any = False
+
+        for key, data in reports.items():
+            if data["url"]:
+                print(f"Relaying {key}...")
+                img_data = requests.get(data["url"], headers=headers).content
+                filename = f"{key.lower()}.png"
+                
+                with open(filename, "wb") as f:
+                    f.write(img_data)
+
+                # Post to final channel with your specific requested message
+                client.files_upload_v2(
+                    channel=target_id, 
+                    file=filename, 
+                    title=f"Ramadan Funnel - {key}",
+                    initial_comment=data["message"]
+                )
+                found_any = True
+            else:
+                print(f"Note: No fresh {key} report found for today.")
+
+        if found_any:
+            print("SUCCESS: Today's snapshots relayed.")
         else:
-            print(f"Download failed: {img_res.status_code}")
+            print("FINISH: No new snapshots found in the 24-hour window.")
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
