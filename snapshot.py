@@ -1,92 +1,52 @@
 import os
-import time
 import sys
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
 from slack_sdk import WebClient
 
-# 1. Pull Environment Variables
-pbi_url = os.environ.get('POWERBI_URL')
-username = os.environ.get('PBI_USERNAME')
-password = os.environ.get('PBI_PASSWORD')
-slack_token = os.environ.get('SLACK_TOKEN')
-channel_id = os.environ.get('SLACK_CHANNEL_ID')
+# 1. Configuration from GitHub Secrets
+token = os.environ.get('SLACK_TOKEN')
+relay_channel = os.environ.get('RELAY_CHANNEL_ID') # Private relay channel
+target_channel = os.environ.get('SLACK_CHANNEL_ID') # Final public/team channel
+client = WebClient(token=token)
 
-# Setup Headless Chrome with a Real User-Agent to avoid bot detection
-options = Options()
-options.add_argument("--headless")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--window-size=1920,1080")
-options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-wait = WebDriverWait(driver, 30)
-
-try:
-    print(f"Navigating to {pbi_url}...")
-    driver.get(pbi_url)
-
-    # --- STEP 1: POWER BI INITIAL EMAIL SCREEN (from your screenshot) ---
-    print("Handling Power BI initial email box...")
-    # The input in your screenshot is a standard email type
-    pbi_email_box = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='email']")))
-    pbi_email_box.send_keys(username)
-    
-    # Click the 'Submit' button seen in your screenshot
-    submit_btn = driver.find_element(By.ID, "submitBtn") # or By.XPATH, "//button[contains(text(),'Submit')]"
-    submit_btn.click()
-    
-    # --- STEP 2: MICROSOFT PASSWORD SCREEN ---
-    print("Waiting for Microsoft Password field...")
-    # This often takes a moment to redirect
-    time.sleep(5) 
-    
-    password_field = wait.until(EC.presence_of_element_located((By.NAME, "passwd")))
-    print("Entering Password...")
-    password_field.send_keys(password)
-    password_field.send_keys(Keys.ENTER)
-    
-    # --- STEP 3: STAY SIGNED IN ---
-    print("Handling 'Stay Signed In' prompt...")
-    time.sleep(3)
+def run_relay():
     try:
-        stay_signed_in_btn = wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9")))
-        stay_signed_in_btn.click()
-    except:
-        print("Stay Signed In button not found, continuing...")
-    
-    # --- STEP 4: RENDER & SNAPSHOT ---
-    print("Waiting 45s for report visuals to render...")
-    time.sleep(45) 
-    
-    print("Taking snapshot...")
-    driver.save_screenshot("snapshot.png")
+        # 2. Find the latest PNG in the relay channel
+        print("Searching relay channel for the latest report...")
+        result = client.files_list(channel=relay_channel, types="images", count=1)
+        
+        if not result.get("files"):
+            print("No files found in the relay channel yet. Check your Outlook forwarder!")
+            return
 
-    print("Uploading to Slack...")
-    client = WebClient(token=slack_token)
-    client.files_upload_v2(
-        channel=channel_id, 
-        file="snapshot.png", 
-        title="Daily Power BI Update"
-    )
-    print("Process Complete!")
-    
-except Exception as e:
-    print(f"FAILED: {e}")
-    driver.save_screenshot("error_view.png")
-    # Send the error screenshot so you can see where it stopped
-    try:
-        client = WebClient(token=slack_token)
-        client.files_upload_v2(channel=channel_id, file="error_view.png", title="Debug: Failed Login State")
-    except:
-        pass
-    sys.exit(1)
-finally:
-    driver.quit()
+        latest_file = result["files"][0]
+        file_url = latest_file["url_private_download"]
+        file_name = latest_file["name"]
+
+        # 3. Download the file from Slack's server using the Bot Token
+        print(f"Downloading {file_name} from relay...")
+        response = requests.get(file_url, headers={'Authorization': f'Bearer {token}'})
+        
+        if response.status_code == 200:
+            with open("report.png", "wb") as f:
+                f.write(response.content)
+        else:
+            print(f"Failed to download file: {response.status_code}")
+            return
+
+        # 4. Upload to the final target channel
+        print(f"Relaying report to {target_channel}...")
+        client.files_upload_v2(
+            channel=target_channel,
+            file="report.png",
+            title="Daily Power BI Snapshot",
+            initial_comment="📊 *Daily Power BI Update*\nHere is the latest snapshot relayed from the report subscription."
+        )
+        print("Success! Report has been relayed.")
+
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    run_relay()
