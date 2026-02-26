@@ -1,26 +1,20 @@
 name: Power BI Slack Relay
 on:
   schedule:
-    # Runs at 07:00 UTC (7 AM) every day
     - cron: '0 7 * * *'
-  workflow_dispatch: # This allows you to click "Run workflow" manually to test
+  workflow_dispatch:
 
 jobs:
-  relay-report:
+  relay:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install Dependencies
+      - name: Install
         run: pip install slack_sdk requests
-
-      - name: Run Relay Script
+      - name: Run
         env:
           SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
