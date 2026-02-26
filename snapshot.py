@@ -3,53 +3,59 @@ import sys
 import requests
 from slack_sdk import WebClient
 
-# 1. Config from GitHub Secrets
-SLACK_TOKEN = os.environ.get('SLACK_TOKEN')
-RELAY_ID = os.environ.get('RELAY_CHANNEL_ID')
-TARGET_ID = os.environ.get('SLACK_CHANNEL_ID')
-client = WebClient(token=SLACK_TOKEN)
+# 1. Config
+token = os.environ.get('SLACK_TOKEN')
+relay_id = os.environ.get('RELAY_CHANNEL_ID')
+target_id = os.environ.get('SLACK_CHANNEL_ID')
+client = WebClient(token=token)
 
 def run_relay():
     try:
-        print(f"--- Diagnostic Check ---")
-        print(f"Relay Channel: {RELAY_ID} | Target Channel: {TARGET_ID}")
-
-        # 2. Search for the image
-        # Using types="images" to find the PNG from your screenshot
-        result = client.files_list(channel=RELAY_ID, types="images", count=5)
+        print(f"--- Aggressive Search ---")
         
-        files = result.get("files", [])
-        print(f"Files found in relay channel: {len(files)}")
+        # Search Method A: Look for files directly
+        print(f"Searching for files in {relay_id}...")
+        res_files = client.files_list(channel=relay_id, count=10)
+        files = res_files.get("files", [])
+        
+        # Search Method B: Look for messages (in case it's an email integration)
+        print(f"Searching message history in {relay_id}...")
+        res_hist = client.conversations_history(channel=relay_id, limit=5)
+        messages = res_hist.get("messages", [])
 
-        if not files:
-            print("ERROR: No images found. Did you /invite the bot to the relay channel?")
+        target_file_url = None
+
+        # Try to find file in file list
+        for f in files:
+            if "png" in f.get('name', '').lower() or "png" in f.get('filetype', ''):
+                target_file_url = f.get("url_private_download")
+                print(f"Found via Files API: {f['name']}")
+                break
+        
+        # If not found, try to find file inside messages (Email integration style)
+        if not target_file_url:
+            for m in messages:
+                if "files" in m:
+                    for f in m["files"]:
+                        if "png" in f.get('name', '').lower():
+                            target_file_url = f.get("url_private_download")
+                            print(f"Found via History API: {f['name']}")
+                            break
+                if target_file_url: break
+
+        if not target_file_url:
+            print("ERROR: Still cannot find a PNG. Is the bot definitely in the relay channel?")
             return
 
-        # 3. Download the newest file
-        latest_file = files[0]
-        print(f"Downloading: {latest_file['name']}")
-        
-        res = requests.get(
-            latest_file["url_private_download"], 
-            headers={'Authorization': f'Bearer {SLACK_TOKEN}'}
-        )
-        
-        if res.status_code == 200:
-            with open("report.png", "wb") as f:
-                f.write(res.content)
-        else:
-            print(f"Download failed: {res.status_code}")
-            return
+        # 3. Download & Upload
+        print("Downloading image...")
+        img_data = requests.get(target_file_url, headers={'Authorization': f'Bearer {token}'}).content
+        with open("report.png", "wb") as f:
+            f.write(img_data)
 
-        # 4. Final Upload
-        print("Uploading to final destination...")
-        client.files_upload_v2(
-            channel=TARGET_ID,
-            file="report.png",
-            title="Daily Power BI Snapshot",
-            initial_comment="📊 *Daily Power BI Update* relayed from subscription."
-        )
-        print("SUCCESS: Report relayed!")
+        print(f"Uploading to {target_id}...")
+        client.files_upload_v2(channel=target_id, file="report.png", title="Power BI Report")
+        print("SUCCESS!")
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
