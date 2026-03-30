@@ -4,21 +4,21 @@ import requests
 import time
 from slack_sdk import WebClient
 
-# 1. Setup - Using your specific Secret names
+# Setup
 token = os.environ.get('SLACK_TOKEN')
-source_id = os.environ.get('AUTOMATION_CHANNEL_ID') # funnel-snapshot-automations
-target_id = os.environ.get('SLACK_CHANNEL_ID')      # Target Team Channel
+source_id = os.environ.get('AUTOMATION_CHANNEL_ID') 
+target_id = os.environ.get('SLACK_CHANNEL_ID')      
 client = WebClient(token=token)
 
 def run_relay():
     try:
-        print(f"--- App Funnel v3.0 Final Attachment Search ---")
+        print(f"--- App Funnel v3.0 Universal Attachment Search ---")
         
-        # 2. Set window for today (last 24 hours)
+        # 1. 24-hour window
         cutoff = time.time() - (24 * 60 * 60)
         
-        # 3. Use files_list to find actual PNGs, bypassing the 'Email' wrapper
-        res = client.files_list(channel=source_id, ts_from=cutoff, types="images")
+        # 2. List ALL files (no type filter) to find the hidden PNGs
+        res = client.files_list(channel=source_id, ts_from=cutoff)
         files = res.get("files", [])
         
         reports = {
@@ -27,20 +27,24 @@ def run_relay():
             "Android": {"kw": "android", "text": "Hi Team, Sharing the Android App Funnel Snapshot", "url": None}
         }
 
-        # 4. Match files to keywords
+        # 3. Precision matching by Extension and Keyword
         for f in files:
             fname = f.get("name", "").lower()
             url = f.get("url_private_download")
             
             if not url: continue
-            print(f"Checking Image: {fname}")
+            
+            # This logs every file the bot sees to help us debug
+            print(f"Inspecting: {fname}")
 
-            for key in reports:
-                if reports[key]["kw"] in fname and not reports[key]["url"]:
-                    reports[key]["url"] = url
-                    print(f"✅ MATCHED ATTACHMENT: {key}")
+            # Identify snapshots by '.png' and keyword
+            if fname.endswith(".png"):
+                for key in reports:
+                    if reports[key]["kw"] in fname and not reports[key]["url"]:
+                        reports[key]["url"] = url
+                        print(f"✅ MATCH FOUND: {key} snapshot ({fname})")
 
-        # 5. Download and Relay binary PNG data
+        # 4. Download and Relay
         headers = {'Authorization': f'Bearer {token}'}
         for key, data in reports.items():
             if data["url"]:
@@ -59,9 +63,9 @@ def run_relay():
                     initial_comment=data["text"]
                 )
                 os.remove(temp_file)
-                print(f"SUCCESS: {key} snapshot posted.")
+                print(f"SUCCESS: {key} posted.")
             else:
-                print(f"SKIP: {key} PNG not found in channel files for the last 24h.")
+                print(f"SKIP: {key} PNG not found. (Check if the subscription has been sent today)")
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
