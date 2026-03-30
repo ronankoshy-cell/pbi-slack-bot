@@ -6,7 +6,7 @@ from slack_sdk import WebClient
 
 # 1. Setup from GitHub Secrets
 token = os.environ.get('SLACK_TOKEN')
-relay_id = os.environ.get('RELAY_CHANNEL_ID')
+relay_id = os.environ.get('AUTOMATION_CHANNEL_ID')
 target_id = os.environ.get('SLACK_CHANNEL_ID')
 client = WebClient(token=token)
 
