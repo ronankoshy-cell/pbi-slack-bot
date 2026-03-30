@@ -6,30 +6,26 @@ from slack_sdk import WebClient
 
 # 1. Setup
 token = os.environ.get('SLACK_TOKEN')
-source_id = os.environ.get('AUTOMATION_CHANNEL_ID') # funnel-snapshot-automations
-target_id = os.environ.get('SLACK_CHANNEL_ID')      # Target Team Channel
+source_id = os.environ.get('AUTOMATION_CHANNEL_ID') 
+target_id = os.environ.get('SLACK_CHANNEL_ID')      
 client = WebClient(token=token)
 
 def run_relay():
     try:
         print(f"--- App Funnel v3.0 Deep-Dive Relay ---")
         
-        # Look back 24 hours to find today's subscriptions
+        # 24-hour window to find today's specific reports
         cutoff = time.time() - (24 * 60 * 60)
-        
-        # Use history to find attachments nested inside emails
         res = client.conversations_history(channel=source_id, limit=40)
         messages = res.get("messages", [])
         
-        print(f"DEBUG: Scanning {len(messages)} messages for hidden attachments...")
-
         reports = {
             "Overall": {"kw": "overall", "text": "Hi Team, Sharing the Overall App Funnel Snapshot", "url": None},
             "iOS": {"kw": "ios", "text": "Hi Team, Sharing the iOS App Funnel Snapshot", "url": None},
             "Android": {"kw": "android", "text": "Hi Team, Sharing the Android App Funnel Snapshot", "url": None}
         }
 
-        # 2. Iterate through messages and their internal files
+        # 2. Iterate through messages and look INSIDE the files array
         for msg in messages:
             if float(msg.get("ts", 0)) < cutoff: continue
             
@@ -38,26 +34,26 @@ def run_relay():
                 fname = f.get("name", "").lower()
                 mimetype = f.get("mimetype", "").lower()
                 url = f.get("url_private_download")
-
+                
                 if not url: continue
 
-                # Logic: Skip the 'text/html' email body; grab the actual image
+                # Logic: Skip the 'text/html' email body; grab only the PNG
                 if "image" in mimetype or fname.endswith(".png"):
                     for key in reports:
                         if reports[key]["kw"] in fname and not reports[key]["url"]:
                             reports[key]["url"] = url
                             print(f"✅ ATTACHMENT FOUND: {key} ({fname})")
 
-        # 3. Download and Relay binary PNG data
+        # 3. Download and Relay
         headers = {'Authorization': f'Bearer {token}'}
         for key, data in reports.items():
             if data["url"]:
-                print(f"Processing {key} snapshot...")
+                print(f"Processing {key}...")
                 img_data = requests.get(data["url"], headers=headers).content
                 temp_file = f"final_{key.lower()}.png"
                 with open(temp_file, "wb") as f: f.write(img_data)
 
-                # Post to target channel
+                # Post binary PNG to target channel
                 client.files_upload_v2(
                     channel=target_id, 
                     file=temp_file, 
