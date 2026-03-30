@@ -1,75 +1,72 @@
 import os
 import sys
 import requests
+import re
 import time
 from slack_sdk import WebClient
 
-# Setup - Mapping to your specific Secret names
+# 1. Setup - Using your current secrets
 token = os.environ.get('SLACK_TOKEN')
-source_id = os.environ.get('AUTOMATION_CHANNEL_ID') # funnel-snapshot-automations
-target_id = os.environ.get('SLACK_CHANNEL_ID')      # Target Team Channel
+source_id = os.environ.get('AUTOMATION_CHANNEL_ID') 
+target_id = os.environ.get('SLACK_CHANNEL_ID')      
 client = WebClient(token=token)
 
 def run_relay():
     try:
-        print(f"--- App Funnel v3.0 Success Relay ---")
+        print("--- App Funnel v3.0 Regex Scraper Relay ---")
         
-        # 1. Look back 24 hours
+        # 2. Get today's messages (24h window)
         cutoff = time.time() - (24 * 60 * 60)
         res = client.conversations_history(channel=source_id, limit=40)
         messages = res.get("messages", [])
         
-        # Reports to find for App Funnel Version 3.0
+        # 3. Targets for App Funnel Version 3.0
         reports = {
             "Overall": {"kw": "overall", "text": "Hi Team, Sharing the Overall App Funnel Snapshot", "url": None},
             "iOS": {"kw": "ios", "text": "Hi Team, Sharing the iOS App Funnel Snapshot", "url": None},
             "Android": {"kw": "android", "text": "Hi Team, Sharing the Android App Funnel Snapshot", "url": None}
         }
 
-        # 2. Iterate through messages & find the hidden PNG attachments
+        # 4. Scrape the raw message string for hosted image links (Your working method!)
         for msg in messages:
             if float(msg.get("ts", 0)) < cutoff: continue
+
+            text_content = str(msg).lower()
             
-            # Reach into the 'files' array for the specific message
-            files = msg.get("files", [])
-            for f in files:
-                fname = f.get("name", "").lower()
-                mimetype = f.get("mimetype", "").lower()
-                url = f.get("url_private_download")
+            # Find URLs pointing to the Slack origin servers where the PNGs are stored
+            found_urls = re.findall(r'https://[^\s"\'<>]*files-origin\.slack\.com/[^\s"\'<>]+', str(msg))
+            
+            for raw_url in found_urls:
+                url = raw_url.replace('\\', '')
                 
-                if not url: continue
+                # Match the URL to the correct report based on the keywords in the email
+                for key, data in reports.items():
+                    if data["kw"] in text_content and not data["url"]:
+                        data["url"] = url
+                        print(f"✅ Regex Matched Image Link for: {key}")
 
-                # Logic: Skip the HTML body; target only the Image/PNG
-                is_html = "html" in mimetype or "email" in mimetype or fname.endswith(".html")
-                is_image = "image" in mimetype or fname.endswith(".png")
-
-                if is_image and not is_html:
-                    for key in reports:
-                        if reports[key]["kw"] in fname and not reports[key]["url"]:
-                            reports[key]["url"] = url
-                            print(f"✅ ATTACHMENT FOUND: {key} ({fname})")
-
-        # 3. Download and Post binary PNG data
+        # 5. Download and Re-Upload
         headers = {'Authorization': f'Bearer {token}'}
         for key, data in reports.items():
             if data["url"]:
-                print(f"Relaying {key} PNG...")
+                print(f"Relaying {key}...")
                 img_data = requests.get(data["url"], headers=headers).content
                 
-                temp_file = f"v3_{key.lower()}.png"
-                with open(temp_file, "wb") as f: f.write(img_data)
+                temp_filename = f"today_{key.lower()}.png"
+                with open(temp_filename, "wb") as f:
+                    f.write(img_data)
 
-                # Post as binary file to ensure it renders as a picture
+                # Post clean binary to target channel
                 client.files_upload_v2(
                     channel=target_id, 
-                    file=temp_file, 
+                    file=temp_filename, 
                     title=f"App Funnel v3.0 - {key}",
                     initial_comment=data["text"]
                 )
-                os.remove(temp_file)
-                print(f"SUCCESS: {key} snapshot posted.")
+                print(f"SUCCESS: {key} relayed.")
+                os.remove(temp_filename)
             else:
-                print(f"SKIP: No PNG attachment found for {key} snapshot today.")
+                print(f"SKIP: No today's snapshot found for {key}.")
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
