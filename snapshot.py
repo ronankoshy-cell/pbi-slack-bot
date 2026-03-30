@@ -12,10 +12,10 @@ client = WebClient(token=token)
 
 def run_relay():
     try:
-        print(f"--- App Funnel v3.0 Deep-Dive Relay ---")
+        print(f"--- App Funnel v3.0 Deep-Scan Relay ---")
         
-        # 24-hour window to find today's specific reports
-        cutoff = time.time() - (24 * 60 * 60)
+        # 2. Window: 48 hours for this test to ensure we find the latest ones
+        cutoff = time.time() - (48 * 60 * 60)
         res = client.conversations_history(channel=source_id, limit=40)
         messages = res.get("messages", [])
         
@@ -25,35 +25,37 @@ def run_relay():
             "Android": {"kw": "android", "text": "Hi Team, Sharing the Android App Funnel Snapshot", "url": None}
         }
 
-        # 2. Iterate through messages and look INSIDE the files array
+        # 3. Aggressive Search: Look in 'files', 'attachments', and 'blocks'
         for msg in messages:
             if float(msg.get("ts", 0)) < cutoff: continue
             
-            files = msg.get("files", [])
-            for f in files:
-                fname = f.get("name", "").lower()
-                mimetype = f.get("mimetype", "").lower()
-                url = f.get("url_private_download")
-                
-                if not url: continue
+            # Combine all potential data sources where Slack hides images
+            potential_files = msg.get("files", []) + msg.get("attachments", [])
+            
+            for f in potential_files:
+                # Check filename, title, or image_url
+                fname = (f.get("name") or f.get("title") or f.get("fallback") or "").lower()
+                url = f.get("url_private_download") or f.get("image_url")
+                mimetype = str(f.get("mimetype", "")).lower()
 
-                # Logic: Skip the 'text/html' email body; grab only the PNG
-                if "image" in mimetype or fname.endswith(".png"):
+                if not url: continue
+                
+                # Logic: If it's a PNG or an Image type, check keywords
+                if "image" in mimetype or ".png" in fname or "snapshot" in fname:
                     for key in reports:
                         if reports[key]["kw"] in fname and not reports[key]["url"]:
                             reports[key]["url"] = url
-                            print(f"✅ ATTACHMENT FOUND: {key} ({fname})")
+                            print(f"✅ FOUND HIDDEN IMAGE: {key} ({fname})")
 
-        # 3. Download and Relay
+        # 4. Download and Relay
         headers = {'Authorization': f'Bearer {token}'}
         for key, data in reports.items():
             if data["url"]:
-                print(f"Processing {key}...")
+                print(f"Relaying {key}...")
                 img_data = requests.get(data["url"], headers=headers).content
                 temp_file = f"final_{key.lower()}.png"
                 with open(temp_file, "wb") as f: f.write(img_data)
 
-                # Post binary PNG to target channel
                 client.files_upload_v2(
                     channel=target_id, 
                     file=temp_file, 
@@ -63,7 +65,7 @@ def run_relay():
                 os.remove(temp_file)
                 print(f"SUCCESS: {key} posted.")
             else:
-                print(f"SKIP: No PNG attachment found for {key} in the last 24h.")
+                print(f"SKIP: No hidden PNG found for {key} snapshot.")
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
