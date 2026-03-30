@@ -4,63 +4,52 @@ import requests
 import time
 from slack_sdk import WebClient
 
-# Setup - Using your specific Secret names
+# Setup
 token = os.environ.get('SLACK_TOKEN')
-source_id = os.environ.get('AUTOMATION_CHANNEL_ID') # funnel-snapshot-automations
-target_id = os.environ.get('SLACK_CHANNEL_ID')      # Target Team Channel
+source_id = os.environ.get('AUTOMATION_CHANNEL_ID') 
+target_id = os.environ.get('SLACK_CHANNEL_ID')      
 client = WebClient(token=token)
 
 def run_relay():
     try:
-        print(f"--- App Funnel v3.0 Deep-Dive Attachment Search ---")
-        
-        # 1. 24-hour window
+        print(f"--- App Funnel v3.0 Success Relay ---")
+        # 1. 24-hour window to ignore old Ramadan reports
         cutoff = time.time() - (24 * 60 * 60)
-        
-        # 2. Get message history to find files attached to those emails
-        res = client.conversations_history(channel=source_id, limit=40)
+        res = client.conversations_history(channel=source_id, limit=30)
         messages = res.get("messages", [])
         
+        # Keywords for App Funnel Version 3.0
         reports = {
             "Overall": {"kw": "overall", "text": "Hi Team, Sharing the Overall App Funnel Snapshot", "url": None},
             "iOS": {"kw": "ios", "text": "Hi Team, Sharing the iOS App Funnel Snapshot", "url": None},
             "Android": {"kw": "android", "text": "Hi Team, Sharing the Android App Funnel Snapshot", "url": None}
         }
 
-        # 3. Look inside messages for image attachments
+        # 2. Scan specifically for PNG ATTACHMENTS
         for msg in messages:
-            msg_ts = float(msg.get("ts", 0))
-            if msg_ts < cutoff: continue
+            if float(msg.get("ts", 0)) < cutoff: continue
             
-            # Check files attached to this specific message
-            files = msg.get("files", [])
-            for f in files:
+            for f in msg.get("files", []):
                 fname = f.get("name", "").lower()
                 mimetype = f.get("mimetype", "").lower()
                 url = f.get("url_private_download")
                 
-                if not url: continue
-                
-                # Identify if it is an actual image (skips the email wrapper)
-                if "image" in mimetype or fname.endswith(".png"):
-                    print(f"Inspecting Image: {fname}")
+                # STRICT FILTER: Target only image PNGs
+                if url and ("image" in mimetype or fname.endswith(".png")):
                     for key in reports:
                         if reports[key]["kw"] in fname and not reports[key]["url"]:
                             reports[key]["url"] = url
-                            print(f"✅ MATCH FOUND: {key} snapshot")
+                            print(f"✅ Found PNG Attachment: {key}")
 
-        # 4. Download and Relay
+        # 3. Download and Relay binary PNG data
         headers = {'Authorization': f'Bearer {token}'}
         for key, data in reports.items():
             if data["url"]:
-                print(f"Relaying {key}...")
                 img_data = requests.get(data["url"], headers=headers).content
-                
-                temp_file = f"v3_{key.lower()}.png"
-                with open(temp_file, "wb") as f:
-                    f.write(img_data)
+                temp_file = f"{key.lower()}.png"
+                with open(temp_file, "wb") as f: f.write(img_data)
 
-                # Post binary PNG to the team channel
+                # Post binary PNG to ensure no code blocks appear
                 client.files_upload_v2(
                     channel=target_id, 
                     file=temp_file, 
@@ -68,9 +57,7 @@ def run_relay():
                     initial_comment=data["text"]
                 )
                 os.remove(temp_file)
-                print(f"SUCCESS: {key} posted.")
-            else:
-                print(f"SKIP: {key} PNG not found in today's messages.")
+                print(f"SUCCESS: {key} snapshot posted.")
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
