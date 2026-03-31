@@ -1,19 +1,31 @@
 name: Daily App Funnel Relay
+
+# We use workflow_dispatch so the workflow can be triggered 
+# manually or instantly via an external API webhook (like cron-job.org) 
+# to guarantee exact, to-the-minute execution without GitHub's cron queue delay.
 on:
-  schedule:
-    - cron: '13 10 * * *' 
   workflow_dispatch:
 
 jobs:
   relay:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # 1. Pull down the repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      # 2. Set up the correct Python environment
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          
+      # 3. Install the required libraries
       - name: Install Dependencies
         run: pip install slack_sdk requests
+        
+      # 4. Run the snapshot script using the hidden GitHub Secrets
       - name: Run Relay
         env:
           SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
