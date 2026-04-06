@@ -66,6 +66,7 @@ def run_relay():
                         initial_comment=data["text"]
                     )
                     print(f"SUCCESS: {key} relayed to channel {channel}.")
+                    time.sleep(3)
                 
                 os.remove(temp_filename)
             else:
