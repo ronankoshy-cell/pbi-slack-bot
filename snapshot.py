@@ -26,10 +26,11 @@ def run_relay():
         messages = res.get("messages", [])
 
         # 3. Targets for App Funnel Version 3.0
+        # Updated to strictly match the exact subscription names
         reports = {
-            "Overall": {"kw": "overall", "text": "Hi Team, Sharing the Overall App Funnel Snapshot", "url": None},
-            "iOS": {"kw": "ios", "text": "Hi Team, Sharing the iOS App Funnel Snapshot", "url": None},
-            "Android": {"kw": "android", "text": "Hi Team, Sharing the Android App Funnel Snapshot", "url": None}
+            "Overall": {"kw": "overall snapshot", "text": "Hi Team, Sharing the Overall App Funnel Snapshot", "url": None},
+            "iOS": {"kw": "ios snapshot", "text": "Hi Team, Sharing the iOS App Funnel Snapshot", "url": None},
+            "Android": {"kw": "android snapshot", "text": "Hi Team, Sharing the Android App Funnel Snapshot", "url": None}
         }
 
         # 4. Scrape the raw message string for hosted image links
