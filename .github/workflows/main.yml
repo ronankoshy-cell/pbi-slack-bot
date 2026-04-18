@@ -29,7 +29,6 @@ jobs:
       - name: Run Relay
         env:
           SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
-          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
           AUTOMATION_CHANNEL_ID: ${{ secrets.AUTOMATION_CHANNEL_ID }}
           GROWTH_CHANNEL_ID: ${{ secrets.GROWTH_CHANNEL_ID }}
         run: python snapshot.py
